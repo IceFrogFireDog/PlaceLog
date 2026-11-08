@@ -1,0 +1,16 @@
+# 비밀값·로컬 설정 (절대 올리지 않음)
+.env
+.env.local
+.env.*.local
+
+# 의존성·빌드 결과 (npm ci / npm run build로 다시 생김)
+node_modules/
+.next/
+out/
+build/
+*.tsbuildinfo
+next-env.d.ts
+
+# 브라우저 E2E
+e2e/node_modules/
+e2e/.tmp/

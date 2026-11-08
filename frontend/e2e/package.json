@@ -1,0 +1,10 @@
+{
+  "name": "photo-globe-e2e",
+  "private": true,
+  "scripts": {
+    "test": "node run.js"
+  },
+  "devDependencies": {
+    "playwright": "1.63.0"
+  }
+}
