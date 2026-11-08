@@ -175,7 +175,7 @@ function DeleteAccount() {
 function Settings() {
   const { user } = useAuth();
   if (!user) return null; // RequireAuth가 로그인 상태에서만 보여 준다
-  // 백엔드가 아직 제공하지 않는 기능은 숨긴다: 프로필 사진·비밀번호 변경은 3차, 2단계 인증·계정 삭제는 4차부터
+  // 백엔드가 아직 제공하지 않는 기능은 숨긴다: email_verified가 없으면 프로필 사진·비밀번호 변경, two_factor_enabled가 없으면 2단계 인증·계정 삭제
   const hasMailFeatures = user.email_verified !== undefined;
   const hasAccountSecurity = user.two_factor_enabled !== undefined;
   return (

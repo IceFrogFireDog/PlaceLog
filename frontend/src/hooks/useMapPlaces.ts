@@ -21,7 +21,7 @@ export function useMapPlaces(mode: MapMode, view: GlobeView, enabled = true) {
         const res = await api<MapResponse>("/map/places", { query: { mode, zoom: view.zoom, bbox: bboxKey || undefined }, signal: ctl.signal });
         setItems(res.items);
       } catch (e) {
-        if (isNotFound(e)) setItems([]); // 지구본 API가 없는 백엔드(1차)
+        if (isNotFound(e)) setItems([]); // 지구본 API가 없는 백엔드
         else if ((e as Error).name !== "AbortError") setError(errorMessage(e));
       } finally {
         if (!ctl.signal.aborted) setLoading(false);

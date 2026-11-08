@@ -30,7 +30,7 @@ function UserPageInner() {
 
   const loadProfile = useCallback(() => {
     api<Profile>(`/users/${username}`).then(setProfile).catch((e) => setErr(errorMessage(e)));
-    // 없는 사용자는 위 프로필 요청이 알려 준다. 목록의 404는 사진 기능이 없는 백엔드(1차) → 빈 목록
+    // 없는 사용자는 위 프로필 요청이 알려 준다. 목록의 404는 사진 기능이 없는 백엔드 → 빈 목록
     api<Page<PlaceDetail>>(`/users/${username}/places`, { query: { limit: 100 } }).then((r) => { setPlaces(r.items); setPlacesErr(null); })
       .catch((e) => (isNotFound(e) ? setPlaces([]) : setPlacesErr(errorMessage(e))));
   }, [username]);

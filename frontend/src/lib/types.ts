@@ -3,7 +3,7 @@ export type MapMode = "WORLD" | "FRIENDS" | "ME";
 export type RelationStatus = "SELF" | "NONE" | "OUTGOING" | "INCOMING" | "FRIENDS";
 
 /**
- * 백엔드 3차까지는 일부 필드를 보내지 않는다(이메일 인증·프로필 사진은 3차, 2단계 인증·관리자는 4차부터).
+ * 백엔드에 따라 일부 필드(이메일 인증·프로필 사진·2단계 인증·관리자)를 보내지 않는다.
  * 필드가 없으면 그 기능이 아직 없는 백엔드이므로 화면에서 숨기거나 기본값으로 본다.
  */
 export interface Me {
@@ -26,7 +26,7 @@ export interface PlaceDetail extends Place { photo_count: number }
 export interface PlaceCreated extends Place { nearby_candidates: Place[] }
 /** 업로드 직후 PROCESSING(원본만 저장) → 변환이 끝나면 READY, 변환할 수 없으면 FAILED. READY가 아닌 사진은 작성자에게만 보인다. */
 export type PhotoStatus = "PROCESSING" | "READY" | "FAILED";
-/** 변환 작업 큐가 없는 백엔드(3차까지)는 status를 보내지 않는다 → 등록이 끝난 사진이므로 READY */
+/** 변환 작업 큐가 없는 백엔드는 status를 보내지 않는다 → 등록이 끝난 사진이므로 READY */
 export const photoStatus = (p: { status?: PhotoStatus }): PhotoStatus => p.status ?? "READY";
 export interface PhotoListItem {
   id: string; owner: UserBrief; place: { id: string; name: string; latitude: number; longitude: number };

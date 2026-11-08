@@ -13,7 +13,7 @@ export class ApiError extends Error {
   }
 }
 
-/** 목록·지도 요청의 404: 그 기능이 아직 없는 백엔드(1차)이거나 대상이 없음 → 빈 결과로 보여 준다 */
+/** 목록·지도 요청의 404: 그 기능이 아직 없는 백엔드이거나 대상이 없음 → 빈 결과로 보여 준다 */
 export const isNotFound = (e: unknown) => e instanceof ApiError && e.status === 404;
 
 let csrfToken: string | null = null;

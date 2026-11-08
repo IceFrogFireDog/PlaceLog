@@ -11,7 +11,7 @@ export function VerifyBanner() {
   const path = usePathname();
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  if (!user || user.email_verified !== false || path === "/verify-email") return null; // 인증 기능이 없는 백엔드(2차까지)는 필드가 없음
+  if (!user || user.email_verified !== false || path === "/verify-email") return null; // 인증 기능이 없는 백엔드는 필드가 없음
 
   async function onResend() {
     setBusy(true); setMsg(null);

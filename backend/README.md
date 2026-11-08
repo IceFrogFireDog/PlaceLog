@@ -3,8 +3,7 @@
 지구본 사진 기록 서비스의 **백엔드(API 서버)** 입니다. 사진을 장소별로 지구본 위에 기록하고, 공개 범위(전체·친구·나만)에 따라 보여 줍니다.
 화면(Next.js)은 이 저장소의 [`frontend/`](../frontend) 폴더에 있습니다. 개발 기준 문서: [`docs/development-spec.md`](docs/development-spec.md)
 
-> **현재 단계: 1차 (v0.1.0)** — 프로젝트 기반 · DB 설계 · 계정(가입·로그인·세션) · 프로필 · 친구
-> 단계별 변경 내역은 [`CHANGELOG.md`](CHANGELOG.md)에 있습니다.
+변경 내역은 [`CHANGELOG.md`](CHANGELOG.md)에 있습니다.
 
 구성: FastAPI 0.142 · PostgreSQL 16 · SQLAlchemy 2.1 · Alembic · Pydantic v2 · pytest
 
@@ -19,7 +18,7 @@
 | 친구 | 요청 · 받은/보낸 요청 목록 · 수락 · 거절 · 취소 · 해제 · 친구 목록 |
 | 검사 | 자동 테스트 · GitHub Actions CI(SQLite·PostgreSQL 테스트, 마이그레이션 왕복) |
 
-장소·사진 테이블은 DB 설계 단계에서 함께 만들어 두었고, API는 2차에서 연결합니다.
+장소·사진 테이블은 DB 설계 때 함께 만들어 두었고, API는 아직 연결하지 않았습니다.
 
 ## 실행 (개발)
 
@@ -32,7 +31,7 @@ docker compose up -d db         # 개발용 PostgreSQL (.env의 POSTGRES_* 값 �
 python -m venv .venv && source .venv/bin/activate
 pip install --require-hashes -r requirements-dev.lock   # 잠금 파일로 검증된 버전 설치
 pip install --no-deps -e .
-alembic upgrade head            # 빈 DB에 전체 스키마 생성 (새 단계를 받은 뒤에도 실행)
+alembic upgrade head            # 빈 DB에 전체 스키마 생성 (새 코드를 받은 뒤에도 실행)
 uvicorn app.main:app --reload --port 8000
 ```
 
@@ -71,20 +70,20 @@ uvicorn app.main:app --reload --port 8000
 
 ## API
 
-| 메서드 | 경로 (`/api/v1` 아래) | 설명 | 단계 |
-| --- | --- | --- | --- |
-| POST | `/auth/register` | 가입 | 1차 |
-| POST | `/auth/login` | 로그인 (쿠키 세션 + `csrf_token` 응답) | 1차 |
-| POST | `/auth/logout` | 로그아웃 | 1차 |
-| GET | `/auth/me` | 내 정보 (+ `csrf_token`) | 1차 |
-| GET | `/users/search?q=` | 사용자 검색 (관계 표시, 이메일 미포함) | 1차 |
-| PATCH | `/users/me` | 표시명·소개 수정 | 1차 |
-| GET | `/users/{username}` | 프로필 | 1차 |
-| POST | `/friends/requests` | 친구 요청 | 1차 |
-| GET | `/friends · /friends/requests?direction=` | 친구 목록 · 받은/보낸 요청 | 1차 |
-| POST | `/friends/{id}/accept · /reject` | 수락 · 거절 | 1차 |
-| DELETE | `/friends/{id}` | 보낸 요청 취소 · 친구 해제 | 1차 |
-| GET | `/health` | 상태 확인 | 1차 |
+| 메서드 | 경로 (`/api/v1` 아래) | 설명 |
+| --- | --- | --- |
+| POST | `/auth/register` | 가입 |
+| POST | `/auth/login` | 로그인 (쿠키 세션 + `csrf_token` 응답) |
+| POST | `/auth/logout` | 로그아웃 |
+| GET | `/auth/me` | 내 정보 (+ `csrf_token`) |
+| GET | `/users/search?q=` | 사용자 검색 (관계 표시, 이메일 미포함) |
+| PATCH | `/users/me` | 표시명·소개 수정 |
+| GET | `/users/{username}` | 프로필 |
+| POST | `/friends/requests` | 친구 요청 |
+| GET | `/friends · /friends/requests?direction=` | 친구 목록 · 받은/보낸 요청 |
+| POST | `/friends/{id}/accept · /reject` | 수락 · 거절 |
+| DELETE | `/friends/{id}` | 보낸 요청 취소 · 친구 해제 |
+| GET | `/health` | 상태 확인 |
 
 - 변경 요청(POST·PUT·PATCH·DELETE)은 로그인 응답의 `csrf_token`을 `X-CSRF-Token` 헤더로 보내야 합니다.
 - 오류는 `{"code", "message", "field_errors"}` 형식, 목록은 `{"items", "next_cursor"}` 형식입니다.
@@ -113,7 +112,3 @@ TEST_DATABASE_URL=postgresql+psycopg://...  pytest   # PostgreSQL (권장, 개�
 - **빈도 제한**: 학교·회사처럼 한 IP를 여럿이 쓰는 환경을 고려해 (IP+이메일)당 분당 10회, IP당 120회, 가입은 IP당 20회.
 - **친구**: 두 사용자 쌍당 한 행(`user_low_id < user_high_id` + 유일·CHECK 제약). 반대 방향 요청은 자동 수락하지 않고 409 `INCOMING_REQUEST_EXISTS`. 거절·취소·해제는 행 삭제.
 - **입력·로그**: NUL 문자는 공통 스키마·URL 검사로 422. 비밀번호·토큰은 로그에 남기지 않고, DB 오류 로그에도 쿼리 값을 찍지 않습니다(`hide_parameters`).
-
-## 다음 단계 (2차)
-
-장소 만들기·검색, 사진 업로드(EXIF 자동 채움, 표시용·썸네일 변환), 공개 범위 권한(사진·이미지·장소·프로필·지구본 공통), 지구본 핀·클러스터 API.
