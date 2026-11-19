@@ -1,0 +1,14 @@
+# 비밀값·로컬 설정 (절대 올리지 않음)
+.env
+.env.prod
+
+# 파이썬
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+
+# 실행하면 생기는 파일 (사진 저장 폴더·개발용 메일함)
+storage/
+dev-mail/
