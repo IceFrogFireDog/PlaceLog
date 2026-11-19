@@ -1,0 +1,39 @@
+from typing import Literal
+
+from fastapi import APIRouter, Depends
+from fastapi.responses import FileResponse, Response
+from sqlalchemy.orm import Session
+
+from app.core.database import get_db
+from app.core.errors import not_found
+from app.dependencies.auth import optional_user
+from app.models import User
+from app.routers._util import parse_uuid
+from app.services.permission_service import can_download_original, get_visible_photo
+from app.services.storage_service import get_storage
+
+router = APIRouter(prefix="/media", tags=["media"])
+
+NO_STORE = {"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"}
+MIME = {"webp": "image/webp", "jpg": "image/jpeg", "png": "image/png"}
+
+
+def _serve(key: str, mime: str, headers: dict):
+    storage = get_storage()
+    path = storage.path_for(key)
+    if path is not None:
+        return FileResponse(path, media_type=mime, headers=headers)
+    try:
+        return Response(storage.read(key), media_type=mime, headers=headers)
+    except FileNotFoundError as e:
+        raise not_found("이미지") from e
+
+
+@router.get("/{photo_id}/{variant}")
+def media(photo_id: str, variant: Literal["thumbnail", "display", "original"], viewer: User | None = Depends(optional_user), db: Session = Depends(get_db)):
+    photo = get_visible_photo(db, viewer, parse_uuid(photo_id, "사진"))
+    if variant == "original" and not can_download_original(viewer, photo):
+        raise not_found("사진")  # 원본은 EXIF GPS 노출 방지를 위해 작성자만
+    key = {"thumbnail": photo.thumbnail_key, "display": photo.display_key, "original": photo.original_key}[variant]
+    mime = MIME.get(key.rsplit(".", 1)[-1], "application/octet-stream")
+    return _serve(key, mime, NO_STORE)
