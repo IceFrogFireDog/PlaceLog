@@ -13,18 +13,29 @@ os.environ["ALLOWED_ORIGINS"] = "http://localhost:3000"
 os.environ["LOCAL_STORAGE_PATH"] = f"{_tmp}/storage"
 os.environ["MAX_UPLOAD_BYTES"] = str(2 * 1024 * 1024)
 os.environ["MAX_IMAGE_PIXELS"] = "4000000"
+os.environ["MAIL_BACKEND"] = "file"
+os.environ["MAIL_FILE_DIR"] = f"{_tmp}/mail"
+os.environ["FRONTEND_BASE_URL"] = "http://localhost:3000"
+os.environ["GEOCODER"] = "none"  # 외부 서비스 호출 금지. 지오코딩 테스트는 가짜 전송으로 주입
+os.environ["STORAGE_BACKEND"] = "local"
+os.environ["RATE_LIMIT_BACKEND"] = "memory"
 
+import email  # noqa: E402
+import re  # noqa: E402
+from email import policy  # noqa: E402
 from pathlib import Path  # noqa: E402
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 from PIL import ExifTags, Image  # noqa: E402
+from sqlalchemy import update  # noqa: E402
 
 from app.core.config import settings  # noqa: E402
-from app.core.database import Base, engine  # noqa: E402
+from app.core.database import Base, SessionLocal, engine, utcnow  # noqa: E402
 from app.core.ratelimit import reset_all  # noqa: E402
 from app.main import app as fastapi_app  # noqa: E402
 import app.models as _models  # noqa: E402,F401
+from app.models import User  # noqa: E402
 
 PASSWORD = "correct-horse-battery"
 
@@ -34,7 +45,9 @@ def _db():
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
     reset_all()
-    # 테스트마다 사진 저장 폴더도 비운다 (이전 테스트의 파일이 다음 테스트에 섞이지 않게)
+    for f in Path(settings.mail_file_dir).glob("*.eml"):
+        f.unlink()
+    # 테스트마다 사진 저장 폴더도 비운다 (이전 테스트의 파일이 정리 작업 결과에 섞이지 않게)
     shutil.rmtree(settings.local_storage_path, ignore_errors=True)
     Path(settings.local_storage_path).mkdir(parents=True, exist_ok=True)
     yield
@@ -45,17 +58,45 @@ def make_client() -> TestClient:
 
 
 def register_payload(username: str, **over) -> dict:
-    return {"email": f"{username}@example.com", "username": username, "display_name": username.upper(), "password": PASSWORD, **over}
+    return {"email": f"{username}@example.com", "username": username, "display_name": username.upper(), "password": PASSWORD, "agree_privacy": True, **over}
+
+
+def mark_verified(user_id: str) -> None:
+    with SessionLocal() as db:
+        db.execute(update(User).where(User.id == uuid.UUID(user_id)).values(email_verified_at=utcnow()))
+        db.commit()
+
+
+def read_mails(to: str) -> list[email.message.EmailMessage]:
+    """개발용 파일 메일함에서 받는 사람이 to인 메일 (오래된 것부터)."""
+    out = []
+    for f in sorted(Path(settings.mail_file_dir).glob("*.eml"), key=lambda p: (p.stat().st_mtime, p.name)):
+        msg = email.message_from_bytes(f.read_bytes(), policy=policy.default)
+        if msg["To"] == to:
+            out.append(msg)
+    return out
+
+
+def last_link(to: str, path: str) -> str:
+    """to에게 간 메일 중 /path?token=… 링크가 든 가장 최근 메일의 토큰."""
+    pattern = re.compile(rf"{re.escape(path)}\?token=([A-Za-z0-9_\-]+)")
+    for msg in reversed(read_mails(to)):
+        m = pattern.search(msg.get_content())
+        if m:
+            return m.group(1)
+    raise AssertionError(f"{to}에게 {path} 링크 메일이 없습니다")
 
 
 class UserClient:
-    def __init__(self, username: str):
+    def __init__(self, username: str, verified: bool = True):
         self.username = username
         self.email = f"{username}@example.com"
         self.c = make_client()
         r = self.c.post("/api/v1/auth/register", json=register_payload(username))
         assert r.status_code == 201, r.text
         self.id = r.json()["id"]
+        if verified:
+            mark_verified(self.id)
         r = self.c.post("/api/v1/auth/login", json={"email": f"{username}@example.com", "password": PASSWORD})
         assert r.status_code == 200, r.text
         self.c.headers["X-CSRF-Token"] = r.json()["csrf_token"]

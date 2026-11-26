@@ -11,6 +11,7 @@ class PlaceCreateIn(StrictModel):
     address: str | None = Field(default=None, max_length=300)
     city: str | None = Field(default=None, max_length=120)
     country_code: str | None = Field(default=None, pattern=r"^[A-Za-z]{2}$")
+    force: bool = False  # 근처에 같은 이름의 장소가 있어도 새로 만들기
 
     @field_validator("name")
     @classmethod

@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.dependencies.auth import optional_user, require_user
+from app.dependencies.auth import optional_user, require_verified_user
 from app.models import Photo, Place, User
 from app.routers._util import parse_uuid
 from app.schemas.common import Page
@@ -27,7 +27,7 @@ def search(q: str = Query(default="", max_length=100), cursor: str | None = None
 
 
 @router.post("", status_code=201, response_model=PlaceCreatedOut)
-def create(data: PlaceCreateIn, me: User = Depends(require_user), db: Session = Depends(get_db)):
+def create(data: PlaceCreateIn, me: User = Depends(require_verified_user), db: Session = Depends(get_db)):
     place, cands = place_service.create(db, me, data)
     return PlaceCreatedOut(**_out(place).model_dump(), nearby_candidates=[_out(c) for c in cands])
 

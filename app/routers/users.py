@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, File, Query, Response, UploadFile
 from sqlalchemy import distinct, func, or_, select
 from sqlalchemy.orm import Session
 
@@ -8,10 +8,10 @@ from app.models import Friendship, FriendshipStatus, Photo, Place, User
 from app.schemas.common import Page
 from app.schemas.photo import PhotoListItem
 from app.schemas.place import PlaceDetailOut
-from app.schemas.user import ProfileOut, ProfileUpdateIn, RelationOut, SearchUserOut, UserBrief
+from app.schemas.user import AvatarOut, ProfileOut, ProfileUpdateIn, RelationOut, SearchUserOut, UserBrief
 from app.dependencies.auth import optional_user, require_user
-from app.services import friendship_service, photo_service
-from app.services.user_view import brief
+from app.services import friendship_service, photo_service, user_service
+from app.services.user_view import avatar_url, brief
 from app.services.pagination import clamp_limit, decode_offset, encode_offset, paginate_desc, split_page
 from app.services.permission_service import visible_photo_query
 from app.services.place_service import _escape_like
@@ -51,6 +51,19 @@ def update_me(data: ProfileUpdateIn, me: User = Depends(require_user), db: Sessi
         me.bio = data.bio
     db.commit()
     return brief(me)
+
+
+@router.put("/me/avatar", response_model=AvatarOut)
+async def upload_avatar(file: UploadFile = File(...), me: User = Depends(require_user), db: Session = Depends(get_db)):
+    """프로필 사진 등록·교체. 가운데를 정사각형으로 잘라 저장하고 EXIF(위치정보)는 지운다."""
+    user = await user_service.set_avatar(db, me, file)
+    return AvatarOut(avatar_url=avatar_url(user))
+
+
+@router.delete("/me/avatar", status_code=204)
+def delete_avatar(me: User = Depends(require_user), db: Session = Depends(get_db)):
+    user_service.remove_avatar(db, me)
+    return Response(status_code=204)
 
 
 @router.get("/{username}", response_model=ProfileOut)

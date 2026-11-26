@@ -152,3 +152,13 @@ def test_db_failure_cleanup(users, monkeypatch):
     with pytest.raises(RuntimeError):  # TestClient는 서버 예외를 그대로 올림 (실서버는 500 INTERNAL_ERROR)
         upload(a, pid)
     assert saved and all(st.path_for(k) is None for k in saved)
+
+
+def test_use_exif_date_false_keeps_date_empty(users):
+    """사용자가 촬영일을 일부러 비우면 EXIF 날짜로 다시 채우지 않는다 (기본값은 EXIF 사용)."""
+    a, *_ = users
+    pid = create_place(a)
+    data = jpeg_bytes(dt="2024:03:01 10:00:00", offset="+09:00")
+    assert upload(a, pid, data=data).json()["taken_at"].startswith("2024-03-01T01:00:00")
+    r = upload(a, pid, data=data, use_exif_date=False)
+    assert r.status_code == 201 and r.json()["taken_at"] is None and r.json()["taken_timezone"] is None

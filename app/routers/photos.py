@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db, taken_at_in_range
 from app.core.errors import AppError
-from app.dependencies.auth import optional_user, require_user
+from app.dependencies.auth import optional_user, require_user, require_verified_user
 from app.models import User
 from app.routers._util import parse_uuid
 from app.schemas.photo import PhotoDetail, PhotoUpdateIn
@@ -29,7 +29,9 @@ async def create(
     shot_longitude: float | None = Form(default=None, ge=-180, le=180),
     share_exact_location: bool = Form(default=False),
     use_exif_location: bool = Form(default=True),
-    me: User = Depends(require_user),
+    # taken_at을 보내지 않았을 때 EXIF 촬영일(시간대 포함)로 채울지. 사용자가 날짜를 일부러 비웠다면 false.
+    use_exif_date: bool = Form(default=True),
+    me: User = Depends(require_verified_user),
     db: Session = Depends(get_db),
 ):
     if (shot_latitude is None) != (shot_longitude is None):
@@ -48,6 +50,7 @@ async def create(
     inp = photo_service.CreatePhotoInput(
         place_id=pid, caption=caption, visibility=visibility, taken_at=taken_at, taken_timezone=taken_timezone,
         shot_latitude=shot_latitude, shot_longitude=shot_longitude, share_exact_location=share_exact_location, use_exif_location=use_exif_location,
+        use_exif_date=use_exif_date,
     )
     photo = await photo_service.create(db, me, file, inp)
     return await run_in_threadpool(photo_service.to_detail, db, me, photo)

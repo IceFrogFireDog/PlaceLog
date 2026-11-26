@@ -4,8 +4,11 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
 from PIL import ExifTags, Image
+from pi_heif import register_heif_opener
 
 from app.core.database import taken_at_in_range
+
+register_heif_opener()  # HEIC(아이폰) EXIF 읽기
 
 
 @dataclass

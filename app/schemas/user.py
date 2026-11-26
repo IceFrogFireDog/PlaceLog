@@ -11,6 +11,7 @@ class UserBrief(BaseModel):
     id: str
     username: str
     display_name: str
+    avatar_url: str | None = None  # 프로필 사진 (없으면 null)
 
 
 class RelationOut(BaseModel):
@@ -29,6 +30,10 @@ class ProfileOut(UserBrief):
 
 class SearchUserOut(UserBrief):
     relation: RelationOut
+
+
+class AvatarOut(BaseModel):
+    avatar_url: str | None
 
 
 class ProfileUpdateIn(StrictModel):

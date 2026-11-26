@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "photo-globe-backend"
-version = "0.2.0"
+version = "0.3.0"
 requires-python = ">=3.12"
 # 허용 범위. 실제 설치는 잠금 파일(requirements.lock / requirements-dev.lock)로 고정한다.
 # 다시 만들기: uv pip compile pyproject.toml --universal --python-version 3.12 --generate-hashes -o requirements.lock
@@ -19,10 +19,14 @@ dependencies = [
   "email-validator>=2.2",
   "python-multipart>=0.0.32",
   "pillow>=12.3,<12.4",
+  "pi-heif>=1.4,<1.5",        # HEIC 디코딩 (디코딩 전용 → GPL 인코더 미포함)
+  "httpx>=0.28,<0.29",        # 장소 검색 제공자 호출
+  "boto3>=1.43,<1.44",        # S3 호환 객체 저장소
+  "redis>=8.1,<8.2",          # 여러 서버 공유 빈도 제한 (RATE_LIMIT_BACKEND=redis)
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=9.1", "httpx>=0.28,<0.29"]  # httpx: FastAPI TestClient
+dev = ["pytest>=9.1", "moto[s3]>=5.2,<5.3", "fakeredis>=2.40,<2.41"]
 
 [tool.setuptools.packages.find]
 include = ["app*"]

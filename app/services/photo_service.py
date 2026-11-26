@@ -33,6 +33,7 @@ class CreatePhotoInput:
     shot_longitude: float | None
     share_exact_location: bool
     use_exif_location: bool
+    use_exif_date: bool = True
 
 
 def _too_large(limit: int) -> AppError:
@@ -60,7 +61,7 @@ def _create_sync(db: Session, user: User, data: bytes, inp: CreatePhotoInput) ->
     if shot_lat is None and inp.use_exif_location:
         shot_lat, shot_lon = exif.latitude, exif.longitude
     taken_at, taken_tz = inp.taken_at, inp.taken_timezone
-    if taken_at is None and exif.taken_at is not None:  # 시간대가 있는 EXIF만 자동 사용
+    if taken_at is None and inp.use_exif_date and exif.taken_at is not None:  # 시간대가 있는 EXIF만 자동 사용
         taken_at, taken_tz = exif.taken_at, exif.taken_timezone
 
     pid = uuid.uuid4()
@@ -100,7 +101,7 @@ _image_limiter: anyio.CapacityLimiter | None = None
 
 
 def image_limiter() -> anyio.CapacityLimiter:
-    """사진 처리 동시 실행 한도 (IMAGE_WORKERS). 큰 사진을 한꺼번에 여러 장 풀어 메모리가 넘치지 않게 한다."""
+    """사진 등록·프로필 사진 처리가 함께 쓰는 동시 처리 한도 (IMAGE_WORKERS). 큰 사진을 한꺼번에 여러 장 풀어 메모리가 넘치지 않게 한다."""
     global _image_limiter
     if _image_limiter is None:  # 이벤트 루프 안에서 처음 쓸 때 생성
         _image_limiter = anyio.CapacityLimiter(settings.image_workers)
@@ -124,7 +125,7 @@ def _cleanup(keys: list[str]) -> list[str]:
         except Exception:  # noqa: BLE001
             failed.append(k)
     if failed:
-        log.warning("file cleanup failed (%d files)", len(failed))
+        log.warning("file cleanup failed (%d files); `python -m app.tasks cleanup` will retry", len(failed))
     return failed
 
 
@@ -160,7 +161,7 @@ def delete(db: Session, user: User, photo: Photo) -> None:
     require_owner(user, photo)
     keys = [photo.original_key, photo.display_key, photo.thumbnail_key]
     db.delete(photo)
-    db.commit()  # DB 먼저 확정 → 파일 삭제가 실패해도 사진은 이미 보이지 않는다 (실패는 로그로 남김)
+    db.commit()  # DB 먼저 확정 → 파일 정리 실패분은 정리 작업(python -m app.tasks cleanup)이 다시 지운다
     _cleanup(keys)
 
 

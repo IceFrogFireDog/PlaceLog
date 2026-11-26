@@ -1,14 +1,19 @@
-"""실제 포맷 검사·크기 제한·방향 보정·리사이즈. 표시용·썸네일은 EXIF 없이 WebP로 재인코딩한다."""
+"""실제 포맷 검사·크기 제한·방향 보정·리사이즈. 표시용·썸네일·프로필 사진은 EXIF 없이 WebP로 재인코딩한다."""
 import io
 from dataclasses import dataclass
 
 from PIL import Image, ImageOps, UnidentifiedImageError
+from pi_heif import register_heif_opener
 
 from app.core.config import settings
 from app.core.errors import AppError
 
-ALLOWED_FORMATS = {"JPEG": "jpg", "PNG": "png", "WEBP": "webp"}
-UNSUPPORTED_MSG = "JPEG, PNG, WebP 이미지만 올릴 수 있습니다."
+# HEIC/HEIF(아이폰 기본 형식) 읽기. pi-heif는 디코딩 전용이라 GPL 인코더(x265)를 포함하지 않는다.
+# HEIF는 컨테이너의 회전 정보를 디코딩 때 적용하고 EXIF 방향을 1로 바꿔 주므로 이중 회전이 생기지 않는다.
+register_heif_opener()
+
+ALLOWED_FORMATS = {"JPEG": "jpg", "PNG": "png", "WEBP": "webp", "HEIF": "heic"}
+UNSUPPORTED_MSG = "JPEG, PNG, WebP, HEIC 이미지만 올릴 수 있습니다."
 _ROTATED = {5, 6, 7, 8}  # EXIF 방향 중 가로·세로가 바뀌는 값
 
 # 동시 처리 수 제한은 photo_service의 anyio CapacityLimiter(IMAGE_WORKERS)가 맡는다.
@@ -99,3 +104,15 @@ def process(data: bytes) -> ProcessedImage:
             display=_encode(img, settings.display_long_edge),
             thumbnail=_encode(img, settings.thumbnail_long_edge),
         )
+
+
+@_guard
+def make_avatar(data: bytes) -> bytes:
+    """가운데를 정사각형으로 잘라 AVATAR_SIZE px WebP로 만든다 (EXIF 제거)."""
+    fmt, w, h, _ = _probe(data)
+    size = settings.avatar_size
+    with _decode(data, fmt, w, h, size * 2) as img:
+        square = ImageOps.fit(img, (size, size), Image.Resampling.LANCZOS, centering=(0.5, 0.5))
+        buf = io.BytesIO()
+        square.save(buf, format="WEBP", quality=85, method=4)
+        return buf.getvalue()
