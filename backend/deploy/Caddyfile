@@ -1,0 +1,22 @@
+# Caddy: HTTPS 인증서 자동 발급·갱신, /api는 백엔드로, 나머지는 Next.js로.
+# 접속 기록(log)은 켜지 않았다. 켤 경우 메일 링크의 ?token= 값이 남지 않도록 걸러야 한다.
+{$DOMAIN} {
+	encode zstd gzip
+
+	# API(사진 업로드 포함)는 백엔드로 바로 보낸다. 사진 한도(일반 20MB·RAW 80MB)는 백엔드가 413으로 검사하고, 여기서는 그보다 큰 요청만 끊는다.
+	handle /api/* {
+		request_body {
+			max_size 90MB
+		}
+		reverse_proxy backend:8000
+	}
+
+	handle {
+		reverse_proxy frontend:3000
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		-Server
+	}
+}

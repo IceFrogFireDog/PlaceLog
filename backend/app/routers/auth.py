@@ -5,13 +5,17 @@ import logging
 
 from app.core.config import settings
 from app.core.database import SessionLocal, get_db
-from app.core.ratelimit import forgot_ip_limiter, forgot_limiter, login_ip_limiter, login_limiter, register_limiter, resend_limiter, token_limiter
+from app.core.errors import AppError
+from app.core.ratelimit import forgot_ip_limiter, forgot_limiter, login_ip_limiter, login_limiter, otp_limiter, register_limiter, resend_limiter, token_limiter
 from app.core.security import csrf_for_session
 from app.dependencies.auth import SESSION_COOKIE, AuthContext, check_origin, require_auth
 from app.models import User
-from app.schemas.auth import ChangePasswordIn, ForgotPasswordIn, LoginIn, MeOut, MessageOut, RegisterIn, ResetPasswordIn, TokenIn
+from app.schemas.auth import (
+    ChangePasswordIn, ForgotPasswordIn, LoginIn, MeOut, MessageOut, OtpCodeIn, PasswordIn, PasswordOtpIn, RecoveryCodesOut,
+    RegisterIn, ResetPasswordIn, TokenIn, TwoFactorSetupOut, TwoFactorStatusOut,
+)
 from app.schemas.user import UserBrief
-from app.services import auth_service, mail_service, user_service
+from app.services import auth_service, mail_service, two_factor_service, user_service
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 log = logging.getLogger(__name__)
@@ -24,12 +28,25 @@ def _client_ip(request: Request) -> str:
 def _me(user: User, csrf: str) -> MeOut:
     return MeOut(
         id=str(user.id), email=user.email, username=user.username, display_name=user.display_name, bio=user.bio,
-        email_verified=user.email_verified_at is not None, avatar_url=user_service.avatar_url(user), csrf_token=csrf,
+        email_verified=user.email_verified_at is not None, avatar_url=user_service.avatar_url(user),
+        two_factor_enabled=user.two_factor_enabled, is_admin=user.is_admin, csrf_token=csrf,
     )
 
 
 def _set_cookie(response: Response, token: str) -> None:
     response.set_cookie(SESSION_COOKIE, token, max_age=settings.session_ttl_seconds, httponly=True, secure=settings.cookie_secure, samesite="lax", path="/")
+
+
+def _otp_limited(user: User, fn):
+    """2단계 인증 코드 확인: 이미 많이 틀렸으면 429, 이번에 틀리면 실패 횟수에 더한다."""
+    key = str(user.id)
+    otp_limiter.check(key)
+    try:
+        return fn()
+    except AppError as e:
+        if e.code == "OTP_INVALID":
+            otp_limiter.hit(key)
+        raise
 
 
 def _send_later(tasks: BackgroundTasks, mail: tuple[str, str, str] | None) -> None:
@@ -53,6 +70,8 @@ def login(data: LoginIn, request: Request, response: Response, db: Session = Dep
     login_ip_limiter.hit(ip)
     login_limiter.hit(f"{ip}|{data.email.strip().lower()}")
     user = auth_service.authenticate(db, data.email, data.password)
+    # 틀린 코드만 센다 (여러 IP에서 나눠 시도해도 계정당 5분에 5회)
+    _otp_limited(user, lambda: two_factor_service.check_login(db, user, data.otp))
     token, csrf = auth_service.create_session(db, user)
     _set_cookie(response, token)
     return _me(user, csrf)
@@ -128,3 +147,39 @@ def change_password(data: ChangePasswordIn, ctx: AuthContext = Depends(require_a
     login_limiter.hit(f"change|{ctx.user.id}")  # 현재 비밀번호 대입 방지
     auth_service.change_password(db, ctx.user, data.current_password, data.new_password, ctx.session)
     return MessageOut(message="비밀번호를 바꿨습니다. 다른 기기의 로그인은 해제되었습니다.")
+
+
+# ---------- 2단계 인증 (TOTP) ----------
+
+@router.get("/2fa", response_model=TwoFactorStatusOut)
+def two_factor_status(ctx: AuthContext = Depends(require_auth), db: Session = Depends(get_db)):
+    return TwoFactorStatusOut(enabled=ctx.user.two_factor_enabled, recovery_codes_left=two_factor_service.remaining_codes(db, ctx.user))
+
+
+@router.post("/2fa/setup", response_model=TwoFactorSetupOut)
+def two_factor_setup(data: PasswordIn, ctx: AuthContext = Depends(require_auth), db: Session = Depends(get_db)):
+    """설정 시작: 비밀번호 확인 후 인증 앱에 등록할 키(QR 내용)를 준다. /2fa/enable로 코드를 확인해야 켜진다."""
+    login_limiter.hit(f"2fa|{ctx.user.id}")
+    secret, uri = two_factor_service.setup(db, ctx.user, data.password)
+    return TwoFactorSetupOut(secret=secret, otpauth_uri=uri)
+
+
+@router.post("/2fa/enable", response_model=RecoveryCodesOut)
+def two_factor_enable(data: OtpCodeIn, ctx: AuthContext = Depends(require_auth), db: Session = Depends(get_db)):
+    codes = _otp_limited(ctx.user, lambda: two_factor_service.enable(db, ctx.user, data.code))
+    return RecoveryCodesOut(recovery_codes=codes)
+
+
+@router.post("/2fa/disable", response_model=MessageOut)
+def two_factor_disable(data: PasswordOtpIn, ctx: AuthContext = Depends(require_auth), db: Session = Depends(get_db)):
+    login_limiter.hit(f"2fa|{ctx.user.id}")  # 비밀번호 대입 방지
+    _otp_limited(ctx.user, lambda: two_factor_service.disable(db, ctx.user, data.password, data.code))
+    return MessageOut(message="2단계 인증을 껐습니다.")
+
+
+@router.post("/2fa/recovery-codes", response_model=RecoveryCodesOut)
+def two_factor_new_codes(data: PasswordOtpIn, ctx: AuthContext = Depends(require_auth), db: Session = Depends(get_db)):
+    """복구 코드를 새로 만든다 (이전 코드는 모두 무효)."""
+    login_limiter.hit(f"2fa|{ctx.user.id}")
+    codes = _otp_limited(ctx.user, lambda: two_factor_service.regenerate_codes(db, ctx.user, data.password, data.code))
+    return RecoveryCodesOut(recovery_codes=codes)

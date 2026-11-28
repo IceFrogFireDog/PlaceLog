@@ -25,3 +25,17 @@ def test_blank_display_name_rejected(users):
     assert r.status_code == 422 and "display_name" in r.json()["field_errors"]
     assert a.get(f"{API}/users/alice").json()["display_name"] == "ALICE"
     assert a.get(f"{API}/users/nobody").json()["message"] == "사용자를 찾을 수 없습니다."
+
+
+def test_security_headers_on_api_and_media(users):
+    from tests.conftest import create_place, make_client, upload
+
+    a, *_ = users
+    r = make_client().get("/api/v1/health")
+    assert r.headers["x-content-type-options"] == "nosniff" and r.headers["x-frame-options"] == "DENY"
+    assert r.headers["content-security-policy"].startswith("default-src 'none'")
+    pid = create_place(a)
+    phid = upload(a, pid, "PUBLIC").json()["id"]
+    img = a.get(f"/api/v1/media/{phid}/thumbnail")
+    assert img.status_code == 200 and img.headers["x-content-type-options"] == "nosniff"
+    assert "content-security-policy" not in make_client().get("/api/v1/docs").headers  # Swagger 화면은 외부 스크립트 사용

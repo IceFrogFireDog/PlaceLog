@@ -2,14 +2,16 @@ from fastapi import APIRouter, Depends, File, Query, Response, UploadFile
 from sqlalchemy import distinct, func, or_, select
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.database import get_db
+from app.core.ratelimit import login_limiter
 from app.core.errors import not_found
 from app.models import Friendship, FriendshipStatus, Photo, Place, User
 from app.schemas.common import Page
 from app.schemas.photo import PhotoListItem
 from app.schemas.place import PlaceDetailOut
-from app.schemas.user import AvatarOut, ProfileOut, ProfileUpdateIn, RelationOut, SearchUserOut, UserBrief
-from app.dependencies.auth import optional_user, require_user
+from app.schemas.user import AvatarOut, DeleteAccountIn, ProfileOut, ProfileUpdateIn, RelationOut, SearchUserOut, UserBrief
+from app.dependencies.auth import SESSION_COOKIE, optional_user, require_user
 from app.services import friendship_service, photo_service, user_service
 from app.services.user_view import avatar_url, brief
 from app.services.pagination import clamp_limit, decode_offset, encode_offset, paginate_desc, split_page
@@ -51,6 +53,16 @@ def update_me(data: ProfileUpdateIn, me: User = Depends(require_user), db: Sessi
         me.bio = data.bio
     db.commit()
     return brief(me)
+
+
+@router.delete("/me", status_code=204)
+def delete_me(data: DeleteAccountIn, me: User = Depends(require_user), db: Session = Depends(get_db)):
+    """계정 삭제(탈퇴). 비밀번호 확인 후 사진·파일·친구 관계·로그인을 모두 지우고 쿠키를 지운다. 되돌릴 수 없다."""
+    login_limiter.hit(f"delete|{me.id}")  # 비밀번호 대입 방지
+    user_service.delete_account(db, me, data.password)
+    resp = Response(status_code=204)
+    resp.delete_cookie(SESSION_COOKIE, path="/", secure=settings.cookie_secure, httponly=True, samesite="lax")
+    return resp
 
 
 @router.put("/me/avatar", response_model=AvatarOut)

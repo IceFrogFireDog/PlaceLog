@@ -111,7 +111,25 @@ def test_bad_inputs(users, anon):
 
 
 def test_storage_failure_cleanup(users, monkeypatch):
-    """파일 3개(원본·표시용·썸네일) 중 하나라도 저장에 실패하면 500, 먼저 저장한 파일도 지우고 사진은 남기지 않는다."""
+    """업로드 때 원본 저장이 실패하면 500, 남는 파일·사진 없음."""
+    a, *_ = users
+    pid = create_place(a)
+    st = storage_service.get_storage()
+    calls = []
+
+    def broken(key, data):
+        calls.append(key)
+        raise OSError("disk full")
+
+    monkeypatch.setattr(st, "save", broken)
+    r = upload(a, pid)
+    assert r.status_code == 500 and r.json()["code"] == "STORAGE_ERROR"
+    assert calls and all(st.path_for(k) is None for k in calls)
+    assert a.get(f"{API}/users/alice").json()["photo_count"] == 0
+
+
+def test_storage_failure_during_processing_marks_failed_then_retry(users, monkeypatch):
+    """변환 중 저장 실패 → FAILED(만들던 파일 정리, 원본은 유지) → 다시 시도하면 READY."""
     a, *_ = users
     pid = create_place(a)
     st = storage_service.get_storage()
@@ -125,9 +143,20 @@ def test_storage_failure_cleanup(users, monkeypatch):
 
     monkeypatch.setattr(st, "save", flaky)
     r = upload(a, pid)
-    assert r.status_code == 500 and r.json()["code"] == "STORAGE_ERROR"
-    assert len(calls) == 3 and all(st.path_for(k) is None for k in calls)
-    assert a.get(f"{API}/users/alice").json()["photo_count"] == 0
+    assert r.status_code == 201
+    phid = r.json()["id"]
+    d = a.get(f"{API}/photos/{phid}").json()
+    assert d["status"] == "FAILED" and "다시 시도" in d["processing_error"]
+    original = next(k for k in calls if "original" in k)
+    assert st.path_for(original) is not None  # 원본은 남김 (다시 시도용)
+    assert all(st.path_for(k) is None for k in calls if "original" not in k)  # 만들던 파일은 정리
+    assert a.get(f"{API}/media/{phid}/thumbnail").json()["code"] == "PHOTO_FAILED"
+
+    monkeypatch.setattr(st, "save", real_save)
+    assert a.post(f"{API}/photos/{phid}/retry").status_code == 200
+    assert a.get(f"{API}/photos/{phid}").json()["status"] == "READY"
+    assert a.get(f"{API}/media/{phid}/thumbnail").status_code == 200
+    assert a.post(f"{API}/photos/{phid}/retry").status_code == 409  # 실패한 사진만
 
 
 def test_db_failure_cleanup(users, monkeypatch):

@@ -39,6 +39,8 @@ def authenticate(db: Session, email: str, password: str) -> User:
     ok = verify_password(password, user.password_hash if user else DUMMY_PASSWORD_HASH)
     if user is None or not ok:
         raise AppError(401, "INVALID_CREDENTIALS", "이메일 또는 비밀번호가 올바르지 않습니다.")
+    if user.suspended_at is not None:
+        raise AppError(403, "ACCOUNT_SUSPENDED", "이용이 정지된 계정입니다. 운영자에게 문의해 주세요.")
     return user
 
 

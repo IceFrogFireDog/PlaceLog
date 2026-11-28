@@ -37,11 +37,15 @@ class Settings(BaseSettings):
     object_storage_prefix: str = ""  # 버킷을 다른 용도와 나눠 쓸 때 앞에 붙는 경로
 
     max_upload_bytes: int = Field(default=20 * 1024 * 1024, ge=1024, le=200 * 1024 * 1024)
+    # RAW(DNG·CR2·NEF·ARW 등) 파일 한도. 0이면 RAW 업로드를 받지 않는다.
+    max_raw_upload_bytes: int = Field(default=80 * 1024 * 1024, ge=0, le=500 * 1024 * 1024)
     max_image_pixels: int = Field(default=80_000_000, ge=1_000_000, le=300_000_000)
     display_long_edge: int = 2400
     thumbnail_long_edge: int = 480
     avatar_size: int = 256
     image_workers: int = Field(default=2, ge=1, le=16)  # 동시 이미지 처리 수
+    # 지구본 전체 지도(WORLD)의 전 지구 화면은 모두에게 같으므로 잠깐 캐시한다 (0이면 끔)
+    map_cache_seconds: int = Field(default=15, ge=0, le=3600)
 
     # --- 이메일 인증·비밀번호 재설정 ---
     email_verification_required: bool = True  # 인증 전에는 사진 등록·장소 생성·친구 요청 불가
@@ -102,6 +106,11 @@ class Settings(BaseSettings):
         if self.mail_backend == "smtp" and not self.smtp_host:
             raise ValueError("MAIL_BACKEND=smtp이면 SMTP_HOST가 필요합니다.")
         return self
+
+    @property
+    def max_photo_request_bytes(self) -> int:
+        """사진 업로드 요청 본문 한도 (일반 사진과 RAW 중 큰 쪽)."""
+        return max(self.max_upload_bytes, self.max_raw_upload_bytes)
 
     @property
     def origins(self) -> list[str]:

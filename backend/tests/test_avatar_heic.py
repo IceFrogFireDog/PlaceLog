@@ -35,17 +35,21 @@ def test_heic_upload_reads_exif_and_converts(users):
 def test_truncated_heic_rejected(users):
     a, *_ = users
     pid = create_place(a)
-    assert upload(a, pid, data=HEIC[: len(HEIC) // 2], filename="broken.heic").status_code == 415  # 등록 단계에서 바로 거절
+    assert upload(a, pid, data=HEIC[: len(HEIC) // 2], filename="broken.heic").status_code == 415  # 헤더 검사에서 바로 거절
 
 
-def test_truncated_jpeg_rejected(users):
-    """헤더는 멀쩡하고 이미지 데이터가 잘린 파일: 표시용으로 변환할 수 없으므로 등록하지 않는다."""
-    a, *_ = users
+def test_truncated_jpeg_fails_processing(users):
+    """헤더는 멀쩡하고 이미지 데이터가 잘린 파일: 등록은 되지만 변환이 실패해 작성자에게만 '변환 실패'로 보인다."""
+    a, b, _ = users
     pid = create_place(a)
+    upload(a, pid, "PUBLIC")
     data = jpeg_bytes(size=(800, 600))
     r = upload(a, pid, "PUBLIC", data=data[: len(data) // 2])
-    assert r.status_code == 415 and "읽을 수 없습니다" in r.json()["message"]
-    assert a.get(f"{API}/places/{pid}").json()["photo_count"] == 0
+    assert r.status_code == 201
+    d = a.get(f"{API}/photos/{r.json()['id']}").json()
+    assert d["status"] == "FAILED" and "읽을 수 없습니다" in d["processing_error"]
+    assert b.get(f"{API}/photos/{r.json()['id']}").status_code == 404
+    assert b.get(f"{API}/places/{pid}").json()["photo_count"] == 1
 
 
 def test_avatar_lifecycle(users, anon):

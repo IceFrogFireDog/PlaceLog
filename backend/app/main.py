@@ -8,7 +8,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.core.config import settings
 from app.core.errors import AppError, app_error_handler, http_error_handler, unhandled_error_handler, validation_error_handler
-from app.routers import auth, friends, geocode, map, media, photos, places, users
+from app.routers import admin, auth, friends, geocode, map, media, photos, places, users
 
 logging.basicConfig(level=logging.INFO)
 
@@ -16,7 +16,7 @@ API_PREFIX = "/api/v1"
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="Photo Globe API", version="0.3.0", openapi_url=f"{API_PREFIX}/openapi.json", docs_url=f"{API_PREFIX}/docs")
+    app = FastAPI(title="Photo Globe API", version="0.4.0", openapi_url=f"{API_PREFIX}/openapi.json", docs_url=f"{API_PREFIX}/docs")
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.origins,
@@ -30,6 +30,18 @@ def create_app() -> FastAPI:
     app.add_exception_handler(Exception, unhandled_error_handler)
 
     @app.middleware("http")
+    async def security_headers(request, call_next):
+        response = await call_next(request)
+        h = response.headers
+        h.setdefault("X-Content-Type-Options", "nosniff")
+        h.setdefault("X-Frame-Options", "DENY")
+        h.setdefault("Referrer-Policy", "no-referrer")
+        # API 응답(JSON·이미지)은 문서로 실행될 일이 없으므로 모두 막는다. 단 /docs(Swagger 화면)는 외부 스크립트를 쓰므로 제외.
+        if not request.url.path.startswith((f"{API_PREFIX}/docs", f"{API_PREFIX}/openapi.json")):
+            h.setdefault("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'; sandbox")
+        return response
+
+    @app.middleware("http")
     async def reject_nul_in_url(request, call_next):
         raw = request.scope.get("raw_path", b"") + b"?" + request.scope.get("query_string", b"")
         if b"%00" in raw or b"\x00" in raw or "\x00" in request.url.path:
@@ -38,7 +50,7 @@ def create_app() -> FastAPI:
 
     @app.middleware("http")
     async def upload_size_guard(request, call_next):
-        limits = {f"{API_PREFIX}/photos": settings.max_upload_bytes, f"{API_PREFIX}/users/me/avatar": settings.max_upload_bytes}
+        limits = {f"{API_PREFIX}/photos": settings.max_photo_request_bytes, f"{API_PREFIX}/users/me/avatar": settings.max_upload_bytes}
         limit = limits.get(request.url.path) if request.method in ("POST", "PUT") else None
         if limit is not None:
             cl = request.headers.get("content-length")
@@ -46,7 +58,7 @@ def create_app() -> FastAPI:
                 return JSONResponse({"code": "FILE_TOO_LARGE", "message": f"파일은 {limit // (1024 * 1024)}MB 이하만 올릴 수 있습니다."}, status_code=413)
         return await call_next(request)
 
-    for r in (auth.router, users.router, friends.router, places.router, photos.router, media.router, map.router, geocode.router):
+    for r in (auth.router, users.router, friends.router, places.router, photos.router, media.router, map.router, geocode.router, admin.router):
         app.include_router(r, prefix=API_PREFIX)
 
     @app.get(f"{API_PREFIX}/health")

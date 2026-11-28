@@ -34,6 +34,14 @@ class MemoryRateLimiter:
                 raise AppError(429, "TOO_MANY_REQUESTS", TOO_MANY)
             q.append(now)
 
+    def check(self, key: str) -> None:
+        """세지 않고 한도만 확인 (실패한 시도만 세는 경우: 먼저 check, 실패하면 hit)."""
+        now = time.monotonic()
+        with self._lock:
+            q = self._hits.get(key)
+            if q and len([t for t in q if t > now - self.window]) >= self.limit:
+                raise AppError(429, "TOO_MANY_REQUESTS", TOO_MANY)
+
     def reset(self) -> None:
         with self._lock:
             self._hits.clear()
@@ -69,6 +77,16 @@ class RedisRateLimiter:
         if count > self.limit:
             raise AppError(429, "TOO_MANY_REQUESTS", TOO_MANY)
 
+    def check(self, key: str) -> None:
+        bucket = int(time.time() // self.window)
+        try:
+            count = int(self.client.get(f"rl:{self.name}:{key}:{bucket}") or 0)
+        except Exception as e:  # noqa: BLE001
+            log.warning("rate limiter backend unavailable (%s); allowing request", type(e).__name__)
+            return
+        if count >= self.limit:
+            raise AppError(429, "TOO_MANY_REQUESTS", TOO_MANY)
+
     def reset(self) -> None:  # 테스트용
         try:
             for k in self.client.scan_iter(f"rl:{self.name}:*"):
@@ -101,3 +119,4 @@ forgot_limiter = make_limiter("forgot", 3, 600)        # key = 이메일 (메일
 forgot_ip_limiter = make_limiter("forgot_ip", 20, 600)  # key = IP
 token_limiter = make_limiter("token", 30, 60)          # key = IP (인증·재설정 토큰 대입 방지)
 geocode_limiter = make_limiter("geocode", 30, 60)      # key = 사용자
+otp_limiter = make_limiter("otp", 5, 300)               # key = 사용자. 틀린 2단계 인증 코드만 센다 (IP와 무관)

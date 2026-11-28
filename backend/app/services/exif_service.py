@@ -68,7 +68,16 @@ def _load(data: bytes) -> Image.Exif | None:
             exif = img.getexif()
             return exif if exif else None
     except Exception:  # noqa: BLE001 - 손상 EXIF 허용
-        return None
+        pass
+    # TIFF 구조의 카메라 RAW(DNG·CR2·NEF·ARW·PEF·SRW): 이미지로는 못 열어도 EXIF·GPS는 일반 TIFF 디렉터리로 읽힌다
+    if data[:4] in (b"II*\x00", b"MM\x00*"):
+        try:
+            exif = Image.Exif()
+            exif.load(data)
+            return exif if exif else None
+        except Exception:  # noqa: BLE001
+            return None
+    return None
 
 
 def extract(data: bytes) -> ExifInfo:

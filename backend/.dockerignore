@@ -1,0 +1,12 @@
+.venv
+.env
+.env.*
+!.env.example
+storage
+dev-mail
+tests
+**/__pycache__
+**/*.pyc
+*.egg-info
+.pytest_cache
+requirements-dev.lock

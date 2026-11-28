@@ -64,3 +64,21 @@ def test_response_cap(users, monkeypatch):
         upload(a, create_place(a, f"p{i}", i, i), "PUBLIC")
     r = a.get(f"{API}/map/places?zoom=10").json()
     assert len(r["items"]) == 2 and r["truncated"] is True
+
+
+def test_world_view_cached_briefly(users, anon, monkeypatch):
+    """전 지구 전체 지도는 잠깐 캐시하고, 범위·친구·내 지도는 캐시하지 않는다."""
+    from app.core.config import settings
+    from app.services import map_service
+
+    a, *_ = users
+    monkeypatch.setattr(settings, "map_cache_seconds", 60)
+    map_service._world_cache.clear()
+    pid = create_place(a, "캐시 장소", 37.0, 127.0)
+    upload(a, pid, "PUBLIC")
+    first = anon.get("/api/v1/map/places", params={"mode": "WORLD", "zoom": 2}).json()
+    upload(a, pid, "PUBLIC")
+    assert anon.get("/api/v1/map/places", params={"mode": "WORLD", "zoom": 2}).json() == first  # 캐시
+    assert anon.get("/api/v1/map/places", params={"mode": "WORLD", "zoom": 2, "bbox": "120,30,135,45"}).json()["items"][0]["photo_count"] == 2
+    assert a.get("/api/v1/map/places", params={"mode": "ME", "zoom": 2}).json()["items"][0]["photo_count"] == 2
+    map_service._world_cache.clear()

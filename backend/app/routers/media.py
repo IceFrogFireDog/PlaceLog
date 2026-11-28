@@ -5,9 +5,9 @@ from fastapi.responses import FileResponse, Response
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.errors import not_found
+from app.core.errors import AppError, not_found
 from app.dependencies.auth import optional_user
-from app.models import User
+from app.models import PhotoStatus, User
 from app.routers._util import parse_uuid
 from app.services.permission_service import can_download_original, get_visible_photo
 from app.services.storage_service import get_storage
@@ -15,7 +15,7 @@ from app.services.storage_service import get_storage
 router = APIRouter(prefix="/media", tags=["media"])
 
 NO_STORE = {"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"}
-MIME = {"webp": "image/webp", "jpg": "image/jpeg", "png": "image/png", "heic": "image/heic"}
+MIME = {"webp": "image/webp", "jpg": "image/jpeg", "png": "image/png", "heic": "image/heic", "dng": "image/x-adobe-dng"}  # 그 밖의 RAW는 octet-stream
 # 프로필 사진은 공개 프로필의 일부이고, 바꿀 때마다 주소가 달라지므로 오래 캐시해도 된다
 AVATAR_CACHE = {"Cache-Control": "public, max-age=86400, immutable", "X-Content-Type-Options": "nosniff"}
 
@@ -44,6 +44,11 @@ def media(photo_id: str, variant: Literal["thumbnail", "display", "original"], v
     photo = get_visible_photo(db, viewer, parse_uuid(photo_id, "사진"))
     if variant == "original" and not can_download_original(viewer, photo):
         raise not_found("사진")  # 원본은 EXIF GPS 노출 방지를 위해 작성자만
+    if variant != "original" and photo.status != PhotoStatus.READY.value:
+        # 여기까지 오는 것은 작성자뿐 (다른 사람에게는 변환이 끝난 사진만 보인다)
+        if photo.status == PhotoStatus.PROCESSING.value:
+            raise AppError(409, "PHOTO_PROCESSING", "사진을 변환하는 중입니다. 잠시 후 다시 확인해 주세요.")
+        raise AppError(409, "PHOTO_FAILED", "변환에 실패한 사진입니다.")
     key = {"thumbnail": photo.thumbnail_key, "display": photo.display_key, "original": photo.original_key}[variant]
     mime = MIME.get(key.rsplit(".", 1)[-1], "application/octet-stream")
     return _serve(key, mime, NO_STORE)

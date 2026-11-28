@@ -8,6 +8,7 @@ from app.schemas.common import StrictModel
 from app.schemas.user import UserBrief
 
 VisibilityLit = Literal["PUBLIC", "FRIENDS", "PRIVATE"]
+StatusLit = Literal["PROCESSING", "READY", "FAILED"]
 
 
 class PhotoPlace(BaseModel):
@@ -25,9 +26,10 @@ class PhotoListItem(BaseModel):
     visibility: VisibilityLit
     width: int
     height: int
-    thumbnail_url: str
+    thumbnail_url: str  # status가 READY일 때만 열림
     taken_at: datetime | None
     created_at: datetime
+    status: StatusLit = "READY"  # PROCESSING·FAILED 사진은 작성자에게만 보인다
 
 
 class PhotoDetail(PhotoListItem):
@@ -45,6 +47,7 @@ class PhotoDetail(PhotoListItem):
     iso: int | None
     is_owner: bool
     updated_at: datetime
+    processing_error: str | None = None  # 변환 실패 이유 (작성자에게만)
 
 
 class PhotoUpdateIn(StrictModel):

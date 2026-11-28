@@ -1,0 +1,104 @@
+# 운영 배포 예시 (서버 1대: Caddy가 HTTPS 인증서를 자동 발급).
+#   프론트엔드는 같은 저장소의 frontend/ 폴더를 빌드한다 (다른 곳이면 .env.prod의 FRONTEND_DIR)
+#   cp .env.prod.example .env.prod   # 값 채우기
+#   docker compose --env-file .env.prod -f compose.prod.yaml up -d --build
+# 도메인의 DNS A 레코드가 이 서버를 가리키고 80·443 포트가 열려 있어야 한다.
+name: photo-globe
+
+x-backend: &backend
+  build: .
+  image: photo-globe-backend:latest
+  restart: unless-stopped
+  env_file:
+    - path: .env.prod
+      required: true
+  environment: &backend-env
+    DATABASE_URL: postgresql+psycopg://photoglobe:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD를 .env.prod에 넣어 주세요}@db:5432/photoglobe
+    COOKIE_SECURE: "true"
+    ALLOWED_ORIGINS: https://${DOMAIN:?DOMAIN을 .env.prod에 넣어 주세요}
+    FRONTEND_BASE_URL: https://${DOMAIN}
+    RATE_LIMIT_BACKEND: redis
+    REDIS_URL: redis://cache:6379/0
+    LOCAL_STORAGE_PATH: /data/storage
+  volumes:
+    - photo-storage:/data/storage
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: photoglobe
+      POSTGRES_USER: photoglobe
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U photoglobe -d photoglobe"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # 빈도 제한 카운터 공유용 (Redis 호환, BSD 라이선스). 저장할 필요가 없어 디스크 기록을 끈다.
+  cache:
+    image: valkey/valkey:8-alpine
+    restart: unless-stopped
+    command: ["valkey-server", "--save", "", "--appendonly", "no"]
+
+  backend:
+    <<: *backend
+    depends_on:
+      db:
+        condition: service_healthy
+      cache:
+        condition: service_started
+
+  # 사진 변환 작업자: 웹 서버가 변환하지 못하고 남긴 작업(재시작·장애)을 이어서 처리하고, 1시간마다 정리 작업도 한다
+  worker:
+    <<: *backend
+    command: ["python", "-m", "app.tasks", "worker"]
+    healthcheck:
+      disable: true
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ${FRONTEND_DIR:-../frontend}
+      args:
+        API_ORIGIN: http://backend:8000
+        NEXT_PUBLIC_MAP_TILE_URL: ${NEXT_PUBLIC_MAP_TILE_URL:-}
+        NEXT_PUBLIC_MAP_ATTRIBUTION: ${NEXT_PUBLIC_MAP_ATTRIBUTION:-}
+        NEXT_PUBLIC_PRIVACY_OFFICER: ${NEXT_PUBLIC_PRIVACY_OFFICER:-}
+        NEXT_PUBLIC_PRIVACY_EMAIL: ${NEXT_PUBLIC_PRIVACY_EMAIL:-}
+        NEXT_PUBLIC_PRIVACY_PROCESSORS: ${NEXT_PUBLIC_PRIVACY_PROCESSORS:-}
+        NEXT_PUBLIC_PRIVACY_EFFECTIVE_DATE: ${NEXT_PUBLIC_PRIVACY_EFFECTIVE_DATE:-}
+    image: photo-globe-frontend:latest
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - frontend
+      - backend
+
+volumes:
+  db-data:
+  photo-storage:
+  caddy-data:
+  caddy-config:

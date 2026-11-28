@@ -48,3 +48,8 @@ class ProfileUpdateIn(StrictModel):
             if not v:
                 raise ValueError("표시명을 입력해 주세요.")
         return v
+
+
+class DeleteAccountIn(StrictModel):
+    """계정 삭제는 되돌릴 수 없으므로 비밀번호로 한 번 더 확인한다."""
+    password: str = Field(min_length=1, max_length=128)

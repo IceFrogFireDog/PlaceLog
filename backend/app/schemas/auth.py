@@ -53,6 +53,34 @@ class RegisterIn(StrictModel):
 class LoginIn(StrictModel):
     email: str = Field(max_length=254)
     password: str = Field(max_length=128)
+    otp: str | None = Field(default=None, max_length=20)  # 2단계 인증 코드 또는 복구 코드
+
+
+class PasswordIn(StrictModel):
+    password: str = Field(min_length=1, max_length=128)
+
+
+class OtpCodeIn(StrictModel):
+    code: str = Field(min_length=1, max_length=20)
+
+
+class PasswordOtpIn(StrictModel):
+    password: str = Field(min_length=1, max_length=128)
+    code: str = Field(min_length=1, max_length=20)
+
+
+class TwoFactorSetupOut(BaseModel):
+    secret: str  # 인증 앱에 직접 입력할 키 (QR을 못 찍을 때)
+    otpauth_uri: str  # QR 코드 내용
+
+
+class RecoveryCodesOut(BaseModel):
+    recovery_codes: list[str]  # 한 번만 보여 준다
+
+
+class TwoFactorStatusOut(BaseModel):
+    enabled: bool
+    recovery_codes_left: int
 
 
 class TokenIn(StrictModel):
@@ -86,6 +114,8 @@ class MeOut(BaseModel):
     bio: str
     email_verified: bool
     avatar_url: str | None = None
+    two_factor_enabled: bool = False
+    is_admin: bool = False
     csrf_token: str
 
 

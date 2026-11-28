@@ -2,6 +2,29 @@
 
 백엔드 변경 사항입니다 (최근 버전이 위).
 
+## 0.4.0
+
+### 추가
+- 사진 변환 작업 큐: 업로드는 원본만 저장하고 바로 응답(`status: PROCESSING`), 표시용·썸네일은 응답 뒤 변환해 `READY`/`FAILED`. `POST /photos/{id}/retry`, 작업자 `python -m app.tasks worker`·`process-pending`
+- 카메라 RAW 업로드(DNG·CR2·NEF·ARW 등, `MAX_RAW_UPLOAD_BYTES` 80MB): 내장 미리보기 사용·절반 크기 현상, TIFF 구조 RAW의 EXIF
+- 2단계 인증: `/auth/2fa/*`, 로그인 `otp`, 복구 코드, 운영자 해제 명령 `disable-2fa`
+- 관리자 API `/admin/*`(통계·사용자 검색·이용 정지·사진 삭제·중복 장소 합치기), `make-admin` 명령
+- 계정 탈퇴 `DELETE /users/me`
+- API 보안 헤더(CSP·nosniff·DENY·no-referrer)
+- 배포: `Dockerfile`, `compose.prod.yaml`(Caddy·DB·캐시·백엔드·작업자·프론트), `deploy/Caddyfile`, `deploy/check.sh`, CI에 Docker 이미지 빌드
+
+### 바뀜
+- 변환 중·실패 사진은 작성자에게만 보임(목록·지도·장소 노출 모두 `READY`만). 변환 전 표시용·썸네일 요청은 409 `PHOTO_PROCESSING`/`PHOTO_FAILED`
+- 지구본 첫 화면 캐시(`MAP_CACHE_SECONDS`), 전체 지도 부분 인덱스
+- 정지된 계정은 로그인(403 `ACCOUNT_SUSPENDED`)과 남은 세션 모두 차단
+- 사용자 정보에 `two_factor_enabled`·`is_admin`, 사진에 `status`·`processing_error`(작성자만)
+
+### DB
+- `0003` 사진 변환 상태·지구본 인덱스(기존 사진은 `READY`), `0004` 2단계 인증·복구 코드, `0005` 관리자·이용 정지
+
+### 테스트
+- 120개 (변환 큐·RAW·2단계 인증·관리자·탈퇴·보안 헤더·캐시 추가)
+
 ## 0.3.0
 
 ### 추가

@@ -5,7 +5,7 @@ from sqlalchemy import ColumnElement, and_, false, or_, select, union
 from sqlalchemy.orm import Session
 
 from app.core.errors import AppError, not_found
-from app.models import Friendship, FriendshipStatus, Photo, Place, User, Visibility
+from app.models import Friendship, FriendshipStatus, Photo, PhotoStatus, Place, User, Visibility
 
 
 def friend_ids_select(user_id: uuid.UUID):
@@ -17,15 +17,20 @@ def friend_ids_select(user_id: uuid.UUID):
     )
 
 
+def _ready() -> ColumnElement[bool]:
+    return Photo.status == PhotoStatus.READY.value
+
+
 def visible_photo_query(viewer: User | None) -> ColumnElement[bool]:
-    """조회자에게 보이는 사진 조건 (장소 기본 목록·프로필·상세에 사용)."""
-    public = Photo.visibility == Visibility.PUBLIC.value
+    """조회자에게 보이는 사진 조건 (장소 기본 목록·프로필·상세에 사용).
+    변환 중(PROCESSING)·실패(FAILED) 사진은 작성자에게만 보인다."""
+    public = and_(_ready(), Photo.visibility == Visibility.PUBLIC.value)
     if viewer is None:
         return public
     return or_(
         Photo.user_id == viewer.id,
         public,
-        and_(Photo.visibility == Visibility.FRIENDS.value, Photo.user_id.in_(friend_ids_select(viewer.id))),
+        and_(_ready(), Photo.visibility == Visibility.FRIENDS.value, Photo.user_id.in_(friend_ids_select(viewer.id))),
     )
 
 
@@ -39,18 +44,19 @@ def visible_place_filter(viewer: User | None) -> ColumnElement[bool]:
 
 
 def map_mode_filter(mode: str, viewer: User | None) -> ColumnElement[bool]:
-    """지구본 필터: WORLD=전체 PUBLIC, FRIENDS=수락 친구의 PUBLIC·FRIENDS, ME=본인 전체."""
+    """지구본 필터: WORLD=전체 PUBLIC, FRIENDS=수락 친구의 PUBLIC·FRIENDS, ME=본인 전체. 모두 변환이 끝난(READY) 사진만."""
     if mode == "WORLD":
-        return Photo.visibility == Visibility.PUBLIC.value
+        return and_(_ready(), Photo.visibility == Visibility.PUBLIC.value)
     if viewer is None:
         raise AppError(401, "UNAUTHORIZED", "로그인이 필요합니다.")
     if mode == "FRIENDS":
         return and_(
+            _ready(),
             Photo.user_id.in_(friend_ids_select(viewer.id)),
             Photo.visibility.in_([Visibility.PUBLIC.value, Visibility.FRIENDS.value]),
         )
     if mode == "ME":
-        return Photo.user_id == viewer.id
+        return and_(_ready(), Photo.user_id == viewer.id)
     return false()
 
 
@@ -63,6 +69,8 @@ def are_friends(db: Session, a: uuid.UUID, b: uuid.UUID) -> bool:
 def can_view_photo(db: Session, viewer: User | None, photo: Photo) -> bool:
     if viewer is not None and photo.user_id == viewer.id:
         return True
+    if photo.status != PhotoStatus.READY.value:  # 변환 중·실패 사진은 작성자만
+        return False
     if photo.visibility == Visibility.PUBLIC.value:
         return True
     if viewer is None:

@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Literal
 
-from fastapi import APIRouter, Depends, File, Form, Response, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Response, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 
@@ -11,7 +11,7 @@ from app.dependencies.auth import optional_user, require_user, require_verified_
 from app.models import User
 from app.routers._util import parse_uuid
 from app.schemas.photo import PhotoDetail, PhotoUpdateIn
-from app.services import photo_service
+from app.services import photo_service, processing_service
 from app.services.permission_service import get_visible_photo
 
 router = APIRouter(prefix="/photos", tags=["photos"])
@@ -19,6 +19,7 @@ router = APIRouter(prefix="/photos", tags=["photos"])
 
 @router.post("", status_code=201, response_model=PhotoDetail)
 async def create(
+    tasks: BackgroundTasks,
     file: UploadFile = File(...),
     place_id: str = Form(...),
     caption: str = Form(default="", max_length=2000),
@@ -53,6 +54,8 @@ async def create(
         use_exif_date=use_exif_date,
     )
     photo = await photo_service.create(db, me, file, inp)
+    # 원본만 저장된 상태(PROCESSING)로 바로 응답하고, 표시용·썸네일 변환은 응답 뒤에 한다
+    tasks.add_task(processing_service.run_job, photo.id)
     return await run_in_threadpool(photo_service.to_detail, db, me, photo)
 
 
@@ -60,6 +63,15 @@ async def create(
 def detail(photo_id: str, viewer: User | None = Depends(optional_user), db: Session = Depends(get_db)):
     photo = get_visible_photo(db, viewer, parse_uuid(photo_id, "사진"))
     return photo_service.to_detail(db, viewer, photo)
+
+
+@router.post("/{photo_id}/retry", response_model=PhotoDetail)
+def retry(photo_id: str, tasks: BackgroundTasks, me: User = Depends(require_user), db: Session = Depends(get_db)):
+    """변환에 실패한 사진을 다시 변환한다 (작성자만)."""
+    photo = get_visible_photo(db, me, parse_uuid(photo_id, "사진"))
+    photo_service.retry(db, me, photo)
+    tasks.add_task(processing_service.run_job, photo.id)
+    return photo_service.to_detail(db, me, photo)
 
 
 @router.patch("/{photo_id}", response_model=PhotoDetail)

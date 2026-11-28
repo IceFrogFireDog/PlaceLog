@@ -45,7 +45,7 @@ def _load(request: Request, db: Session) -> AuthContext | None:
     if sess is None or sess.expires_at <= utcnow():
         return None
     user = db.get(User, sess.user_id)
-    if user is None:
+    if user is None or user.suspended_at is not None:  # 정지된 계정은 남은 세션으로도 쓸 수 없다
         return None
     return AuthContext(user=user, session=sess, raw_token=raw)
 
@@ -80,6 +80,13 @@ def optional_user(ctx: AuthContext | None = Depends(optional_auth)) -> User | No
 
 def require_user(ctx: AuthContext = Depends(require_auth)) -> User:
     return ctx.user
+
+
+def require_admin(user: User = Depends(require_user)) -> User:
+    """관리자 화면 API. 관리자가 아니면 존재 자체를 드러내지 않도록 404."""
+    if not user.is_admin:
+        raise AppError(404, "NOT_FOUND", "요청한 주소를 찾을 수 없습니다.")
+    return user
 
 
 def require_verified_user(user: User = Depends(require_user)) -> User:
