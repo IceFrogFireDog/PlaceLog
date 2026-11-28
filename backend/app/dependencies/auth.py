@@ -80,3 +80,10 @@ def optional_user(ctx: AuthContext | None = Depends(optional_auth)) -> User | No
 
 def require_user(ctx: AuthContext = Depends(require_auth)) -> User:
     return ctx.user
+
+
+def require_verified_user(user: User = Depends(require_user)) -> User:
+    """사진 등록·장소 생성·친구 요청처럼 다른 사람에게 영향을 주는 작업은 이메일 인증 후에만."""
+    if settings.email_verification_required and user.email_verified_at is None:
+        raise AppError(403, "EMAIL_NOT_VERIFIED", "이메일 인증을 마친 뒤 이용할 수 있습니다. 받은 메일의 링크를 눌러 주세요.")
+    return user

@@ -8,7 +8,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.core.config import settings
 from app.core.errors import AppError, app_error_handler, http_error_handler, unhandled_error_handler, validation_error_handler
-from app.routers import auth, friends, users
+from app.routers import auth, friends, geocode, map, media, photos, places, users
 
 logging.basicConfig(level=logging.INFO)
 
@@ -16,7 +16,7 @@ API_PREFIX = "/api/v1"
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="Photo Globe API", version="0.1.0", openapi_url=f"{API_PREFIX}/openapi.json", docs_url=f"{API_PREFIX}/docs")
+    app = FastAPI(title="Photo Globe API", version="0.3.0", openapi_url=f"{API_PREFIX}/openapi.json", docs_url=f"{API_PREFIX}/docs")
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.origins,
@@ -36,7 +36,17 @@ def create_app() -> FastAPI:
             return JSONResponse({"code": "VALIDATION_ERROR", "message": "허용되지 않는 문자가 포함되어 있습니다."}, status_code=422)
         return await call_next(request)
 
-    for r in (auth.router, users.router, friends.router):
+    @app.middleware("http")
+    async def upload_size_guard(request, call_next):
+        limits = {f"{API_PREFIX}/photos": settings.max_upload_bytes, f"{API_PREFIX}/users/me/avatar": settings.max_upload_bytes}
+        limit = limits.get(request.url.path) if request.method in ("POST", "PUT") else None
+        if limit is not None:
+            cl = request.headers.get("content-length")
+            if cl is not None and cl.isdigit() and int(cl) > limit + 1024 * 1024:
+                return JSONResponse({"code": "FILE_TOO_LARGE", "message": f"파일은 {limit // (1024 * 1024)}MB 이하만 올릴 수 있습니다."}, status_code=413)
+        return await call_next(request)
+
+    for r in (auth.router, users.router, friends.router, places.router, photos.router, media.router, map.router, geocode.router):
         app.include_router(r, prefix=API_PREFIX)
 
     @app.get(f"{API_PREFIX}/health")

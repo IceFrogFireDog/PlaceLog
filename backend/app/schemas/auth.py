@@ -7,7 +7,7 @@ USERNAME_RE = re.compile(r"^[A-Za-z0-9_]{3,30}$")
 # /users/search, /users/me 같은 고정 경로·프론트 경로와 충돌하는 이름
 RESERVED_USERNAMES = {
     "search", "me", "settings", "admin", "api", "login", "logout", "register", "upload", "friends", "places", "photos", "users",
-    "new", "edit", "null", "undefined",
+    "new", "edit", "null", "undefined", "privacy", "verify-email", "reset-password", "forgot-password",
 }
 
 
@@ -16,6 +16,8 @@ class RegisterIn(StrictModel):
     username: str
     display_name: str = Field(min_length=1, max_length=50)
     password: str = Field(min_length=12, max_length=128)
+    # 개인정보 안내 동의 (필수). 빠져 있어도 아래 검사기가 한국어 메시지로 거절하도록 validate_default.
+    agree_privacy: bool = Field(default=False, validate_default=True)
 
     @field_validator("email")
     @classmethod
@@ -40,10 +42,40 @@ class RegisterIn(StrictModel):
             raise ValueError("표시명을 입력해 주세요.")
         return v
 
+    @field_validator("agree_privacy")
+    @classmethod
+    def _agree(cls, v: bool) -> bool:
+        if not v:
+            raise ValueError("개인정보 안내에 동의해야 가입할 수 있습니다.")
+        return v
+
 
 class LoginIn(StrictModel):
     email: str = Field(max_length=254)
     password: str = Field(max_length=128)
+
+
+class TokenIn(StrictModel):
+    token: str = Field(min_length=10, max_length=200)
+
+
+class ForgotPasswordIn(StrictModel):
+    email: EmailStr
+
+    @field_validator("email")
+    @classmethod
+    def _email(cls, v: str) -> str:
+        return v.strip().lower()
+
+
+class ResetPasswordIn(StrictModel):
+    token: str = Field(min_length=10, max_length=200)
+    password: str = Field(min_length=12, max_length=128)
+
+
+class ChangePasswordIn(StrictModel):
+    current_password: str = Field(max_length=128)
+    new_password: str = Field(min_length=12, max_length=128)
 
 
 class MeOut(BaseModel):
@@ -52,4 +84,10 @@ class MeOut(BaseModel):
     username: str
     display_name: str
     bio: str
+    email_verified: bool
+    avatar_url: str | None = None
     csrf_token: str
+
+
+class MessageOut(BaseModel):
+    message: str

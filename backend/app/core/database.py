@@ -16,6 +16,17 @@ else:
 # hide_parameters: DB 오류 로그에 쿼리 값(비밀번호 해시·정확한 GPS 등)이 찍히지 않게 (지시서 3.5)
 _pool = {} if settings.database_url.startswith("sqlite") else {"pool_size": 10, "max_overflow": 20}
 engine = create_engine(settings.database_url, pool_pre_ping=True, connect_args=_connect_args, hide_parameters=True, **_pool)
+
+# 촬영일 허용 범위. 범위 밖 값은 시간대 변환 시 연도 1~9999를 넘어 읽기 단계에서 오류가 날 수 있다.
+MIN_TAKEN_AT = datetime(1826, 1, 1, tzinfo=timezone.utc)  # 현존하는 가장 오래된 사진 무렵
+MAX_TAKEN_AT = datetime(2100, 1, 1, tzinfo=timezone.utc)
+
+
+def taken_at_in_range(value: datetime) -> bool:
+    try:
+        return MIN_TAKEN_AT <= value.astimezone(timezone.utc) < MAX_TAKEN_AT
+    except (OverflowError, ValueError):
+        return False
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
 
 

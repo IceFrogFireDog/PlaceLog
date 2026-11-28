@@ -11,7 +11,7 @@ API = "/api/v1"
 
 def test_register_login_me_logout():
     c = make_client()
-    r = c.post(f"{API}/auth/register", json={"email": "New@Example.com", "username": "New_User", "display_name": "새 사용자", "password": PASSWORD})
+    r = c.post(f"{API}/auth/register", json={"agree_privacy": True, "email": "New@Example.com", "username": "New_User", "display_name": "새 사용자", "password": PASSWORD})
     assert r.status_code == 201
     assert "email" not in r.json() and "password_hash" not in r.json()
     assert r.json()["username"] == "new_user"
@@ -43,14 +43,14 @@ def test_password_is_hashed():
 def test_duplicates_rejected():
     UserClient("dup")
     c = make_client()
-    r = c.post(f"{API}/auth/register", json={"email": "DUP@example.com", "username": "DUP", "display_name": "x", "password": PASSWORD})
+    r = c.post(f"{API}/auth/register", json={"agree_privacy": True, "email": "DUP@example.com", "username": "DUP", "display_name": "x", "password": PASSWORD})
     assert r.status_code == 409
     assert set(r.json()["field_errors"]) == {"email", "username"}
 
 
 def test_validation():
     c = make_client()
-    r = c.post(f"{API}/auth/register", json={"email": "bad", "username": "a!", "display_name": "", "password": "short"})
+    r = c.post(f"{API}/auth/register", json={"agree_privacy": True, "email": "bad", "username": "a!", "display_name": "", "password": "short"})
     assert r.status_code == 422
     assert {"email", "username", "display_name", "password"} <= set(r.json()["field_errors"])
 
@@ -97,11 +97,11 @@ def test_shared_ip_many_users_can_log_in():
 def test_reserved_usernames_rejected():
     c = make_client()
     for name in ("search", "ME", "settings"):
-        r = c.post(f"{API}/auth/register", json={"email": f"{name}@example.com", "username": name, "display_name": "x", "password": PASSWORD})
+        r = c.post(f"{API}/auth/register", json={"agree_privacy": True, "email": f"{name}@example.com", "username": name, "display_name": "x", "password": PASSWORD})
         assert r.status_code == 422 and "username" in r.json()["field_errors"], name
 
 
 def test_validation_error_does_not_echo_password():
     c = make_client()
-    r = c.post(f"{API}/auth/register", json={"email": "a@example.com", "username": "abc", "display_name": "x", "password": "pw-leak1"})
+    r = c.post(f"{API}/auth/register", json={"agree_privacy": True, "email": "a@example.com", "username": "abc", "display_name": "x", "password": "pw-leak1"})
     assert r.status_code == 422 and "pw-leak1" not in r.text

@@ -16,5 +16,12 @@ class User(Base):
     display_name: Mapped[str] = mapped_column(String(50))
     password_hash: Mapped[str] = mapped_column(String(255))
     bio: Mapped[str] = mapped_column(Text, default="")
+    email_verified_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+    privacy_agreed_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)  # 개인정보 안내 동의 시각
+    avatar_key: Mapped[str | None] = mapped_column(String(200), nullable=True)  # 프로필 사진 저장 키
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, onupdate=utcnow)
+
+    @property
+    def email_verified(self) -> bool:
+        return self.email_verified_at is not None

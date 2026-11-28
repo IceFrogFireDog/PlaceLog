@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, Response
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.dependencies.auth import require_user
+from app.dependencies.auth import require_user, require_verified_user
 from app.models import Friendship, FriendshipStatus, User
 from app.routers._util import parse_uuid
 from app.schemas.common import Page
@@ -28,7 +28,7 @@ def _out(db: Session, me: User, f: Friendship) -> FriendshipOut:
 
 
 @router.post("/requests", status_code=201, response_model=FriendshipOut)
-def send(data: FriendRequestIn, me: User = Depends(require_user), db: Session = Depends(get_db)):
+def send(data: FriendRequestIn, me: User = Depends(require_verified_user), db: Session = Depends(get_db)):
     f = friendship_service.send_request(db, me, parse_uuid(data.target_user_id, "사용자"))
     return _out(db, me, f)
 
